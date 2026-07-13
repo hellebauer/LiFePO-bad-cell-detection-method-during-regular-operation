@@ -11,7 +11,9 @@ distinguishing a genuinely failing cell from normal manufacturing spread.
 
 It was worked out on a real stack: 4× US3000C on a Victron MultiPlus-II 3000,
 ~475 cycles, using ~11 months of logged data plus targeted tests. All numbers below
-are from that stack.
+are from that battery stack.  
+
+To find a failing cell various test need to run. During these tests Screenshots of Multisibcontrol (Monitoring TAB) are submitted to Claude AI. Claude will extract the relevant numbers and keep track. You will need to load Skill.md into Claude AI to start session.
 
 ---
 
