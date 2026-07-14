@@ -11,9 +11,7 @@ distinguishing a genuinely failing cell from normal manufacturing spread.
 
 It was worked out on a real stack: 4× US3000C on a Victron MultiPlus-II 3000,
 ~475 cycles, using ~11 months of logged data plus targeted tests. All numbers below
-are from that battery stack.  
-
-To find a failing cell various test need to run. During these tests Screenshots of Multisibcontrol (Monitoring TAB) are submitted to Claude AI. Claude will extract the relevant numbers and keep track. You will need to load Skill.md into Claude AI to start session.
+are from that stack.
 
 ---
 
@@ -29,6 +27,7 @@ To find a failing cell various test need to run. During these tests Screenshots 
   - [3. The current-reversal test](#3-the-current-reversal-test)
   - [4. The sustained-load test — the one that actually matters](#4-the-sustained-load-test--the-one-that-actually-matters)
   - [5. The recovery test](#5-the-recovery-test)
+  - [6. Is it getting worse? The longitudinal test](#6-is-it-getting-worse-the-longitudinal-test)
 - [The passive balancer is making it worse](#the-passive-balancer-is-making-it-worse)
 - [What you can honestly conclude](#what-you-can-honestly-conclude)
 - [Scope and limitations](#scope-and-limitations--read-this)
@@ -97,13 +96,37 @@ measured.
 | Balancer running (cells >3.45 V) | *nothing* | The balancer distorts the reading of whichever cell it's bleeding |
 | Within ~2 min of a load change | *nothing* | Cells haven't settled yet |
 | Low current (<5 A per pack) | Charge state | Resistance — the signal is down at the BMS's 1 mV resolution |
+| A sustained-load test at low current | *nothing* | **Gives a false negative — see Test 4** |
+| "At rest", but less than an hour since the current stopped | *little* | A degraded cell may still be relaxing — see below |
 
 The last row bit me repeatedly. At 4 A per pack I was seeing 4–6 mV spreads and
 computing resistance values that scattered between 0.7 and 1.5 mΩ. The numbers were
 noise. At 13 A the same measurement was clean.
 
 **Rule of thumb: measure resistance under as much current as your system will give you,
-in the middle of the SOC range, and never while the balancer is active.**
+in the middle of the SOC range, and never while the balancer is active. Measure charge
+state at zero current, in the middle of the range, once things have actually settled.**
+
+### "At rest" is not the same as "settled"
+
+I had this wrong, and it's worth being explicit about.
+
+A degraded cell can have a badly stretched relaxation time constant — that's part of what's
+wrong with it. So "rest" is not a state you arrive at five minutes after the load stops.
+
+Watch this. Zero current the whole time, stack sitting idle at 100%:
+
+| Time | Cell 13 | Highest cell in the pack | Spread |
+|---|---|---|---|
+| 16:01 | 3.433 V | 3.459 V | 26 mV |
+| 17:06 | **3.383 V** | 3.411 V | **28 mV** |
+
+Sixty-five minutes, no current, and the cell is *still falling*. Its neighbours are steady.
+It's relaxing towards its true (lower) charge state, and it's taking its time about it.
+
+**So: take a series of rest readings, not one.** If the value is still moving at your last
+reading, say so — and extrapolate rather than pretending the last point is the answer. The
+stretched time constant is itself a finding.
 
 ---
 
@@ -140,19 +163,46 @@ Not one screenshot per test. A *series*.
 The sustained-load test in particular is worthless with two data points. The whole finding
 is the *shape* of the curve, and you only see a shape if you sample it.
 
-### Record the context with every screenshot
+### The timestamp is what joins the two halves
 
-A cell voltage on its own means nothing. The same 3.24 V reading is unremarkable at rest
-and alarming under 13 A. Note, for each capture:
+This is the bit I'd most want you to take away from this section.
 
-- **Current** (per pack — not just stack total)
-- **SOC** of the reference packs (not the suspect pack; its SOC reading is skewed)
-- **How long** the current has been flowing at that level
-- **Cell temperatures** (warmth lowers internal resistance and will mask the effect)
+A cell voltage on its own means nothing. The same 3.24 V is unremarkable at rest and
+alarming under 13 A. And the same 13 A means something different two minutes into a
+discharge than it does fifty minutes in. So every screenshot needs its **load context**:
+current, SOC, how long the current has been flowing, how much charge has passed, how long
+since the current stopped.
 
-If your screenshots include the table with pack current, SOC and temperatures alongside
-the cell voltages — as MultiSIBControl's monitoring view does — that's all captured for
-free. Which is the main reason to use it.
+You could write all that down by hand. Don't. **Put the clock in the picture.**
+
+If the taskbar clock is visible in the screenshot, then the screenshot has a timestamp; and
+if you also have the CSV covering that period, then every piece of context above can be
+*derived* by matching the two. Phase, duration, throughput, rest time — all of it, computed,
+not remembered.
+
+That's what makes the pair of sources more than the sum of them. The CSV has no cell
+voltages. The screenshot has no history. The timestamp is the hinge.
+
+**Practically: make sure the Windows clock is in frame, every time. Keep the CSV for the
+same period. Everything else follows.**
+
+(Cell temperatures are worth a glance too — warmth lowers internal resistance and can mask
+the effect. MultiSIBControl's monitoring view shows them alongside the cell voltages, so
+you get them for free.)
+
+### Don't trust the BMS's own min/max/imbalance rows
+
+The monitoring view shows you `Cell volt (min)`, `Cell volt (max)` and `Cell imbalance`. It
+also shows you all fifteen individual cells. **These do not agree.**
+
+Not because anything is broken — the summary registers and the per-cell registers are simply
+polled at slightly different moments. Usually the discrepancy is under a millivolt. I've seen
+it reach 12 mV.
+
+When you're chasing a signal that *is* a few millivolts, that matters.
+
+**Compute the spread yourself, from the fifteen values.** Never quote the imbalance figure as
+though it were a measurement.
 
 ---
 
@@ -213,6 +263,19 @@ Pack 4 started out *better* than average. That's the part that matters. A system
 error in the method would have shown P4 as elevated from day one. Instead it crossed
 from negative to strongly positive, monotonically. That's a real, progressing change.
 
+**While you're in the CSV, check the throughput split.** Each pack should carry 1/N of the
+work. Mine didn't: P4 delivered only **86%** of its share, and P3 was picking up **108%**.
+
+That's not just bookkeeping. The degraded module is being *spared*, and the healthy ones are
+being *worked harder* — so they age faster. A weak pack quietly taxes the rest of the stack.
+Worth knowing before you decide whether to leave it in.
+
+**One thing that trips people up:** there is no per-module current control. In a parallel
+stack the BMS does not decide how much current each module takes. The split is passive —
+`I = (U_bus − OCV) / R` — and the master BMS issues a single **common** current limit to the
+inverter. A weak module takes less current because it *is* weak, not because anything chose
+that for it.
+
 ### 3. The current-reversal test
 
 This is the cheapest and most decisive test in the whole method.
@@ -235,6 +298,32 @@ no current flows. That is a textbook resistance signature and it cannot be anyth
 
 Meanwhile the other three packs sat at 1–2 mV spread in every state.
 
+**Now don't stop there — measure it.** The sign flip tells you the *mechanism*. Regressing it
+tells you the *magnitude*, and separates the two things that are tangled together in every
+loaded reading.
+
+Take readings across a range of currents, all in the flat region, and plot the suspect cell's
+gap to the highest cell in its pack against that pack's current:
+
+| Current through P4 | Cell 13's gap to the top cell | Position |
+|---|---|---|
+| −1.93 A (discharging) | 15 mV | lowest |
+| +0.87 A (charging) | 12 mV | lowest |
+| +2.94 A | 8 mV | lowest |
+| +8.52 A | 3 mV | lowest |
+| +8.84 A | 0 mV | **highest** |
+
+It's a straight line, and it gives you three numbers:
+
+- **The slope** → the excess resistance. Here, ~**1.1 mΩ** above its neighbours.
+- **The intercept at 0 A** → **the real charge deficit, with the I·R term removed.** Here,
+  ~**13 mV**. *This is the number you actually want.*
+- **The zero-crossing** → the current at which the cell flips from lowest to highest. Here,
+  ~**8.8 A**.
+
+Any single loaded reading mixes resistance and charge deficit together and you cannot tell
+how much of it is which. The extrapolation to zero current is what pulls them apart.
+
 ### 4. The sustained-load test — the one that actually matters
 
 Everything above finds a resistance difference. This test tells you whether that
@@ -248,9 +337,24 @@ Diffusion limitation is different. If a cell's internal ion transport can't keep
 concentration gradient at the electrode builds over minutes, and the voltage droop
 **grows** — even at constant current.
 
+**Before you run it — a warning that cost me the whole first attempt.**
+
+My first sustained-load test ran at about 14 A per pack. It found **nothing**. The gap sat
+there, flat and unremarkable, and I concluded the cell was fine. I was wrong, and I stayed
+wrong for a while.
+
+At 56 A stack load, the same cell gave up the signature within twenty minutes.
+
+Diffusion limitation only shows itself under real current. **An under-powered test doesn't
+return "healthy" — it returns nothing, which looks identical to healthy.** That's the
+dangerous direction of this error: a false alarm gets checked, a false all-clear ends the
+investigation.
+
+**If your load test comes back clean, look at the current before you believe it.**
+
 **How to run it:** start from mid SOC (~60%), apply as much constant discharge as your
-system allows, and record cell voltages every 10–15 minutes for at least an hour. Track
-the gap between your suspect cell and the highest cell in the same pack.
+system allows — as much as you can get — and record cell voltages every 10–15 minutes for at
+least an hour. Track the gap between your suspect cell and the highest cell in the same pack.
 
 Here's what happened on my stack, at roughly constant current:
 
@@ -322,6 +426,41 @@ intra-pack spread, not pack-versus-pack voltage, and the test survives.
 
 (Credit where due: I missed this initially and had to be pulled up on it.)
 
+### 6. Is it getting worse? The longitudinal test
+
+Everything above tells you what state the cell is *in*. None of it tells you where it's
+*going* — and that's the question you actually care about, because a stable defect you can
+live with and a progressing one you can't.
+
+The pack-level trend in Test 2 gets you part of the way. But the cell-level version is
+sharper, and it's simple to run: **take the same measurement, in the same state, on
+different days, and watch the number.**
+
+"The same state" is doing all the work in that sentence. It means:
+
+- **Mid SOC**, in the flat region
+- **Zero current** — not "low", *zero*. Any current at all drags the I·R term back in.
+- **Settled** — and the same amount of settling each time
+- **Balancer inactive** (it will be, at mid SOC)
+
+The natural window is first thing in the morning: let the stack discharge overnight, then
+hold charging off until you've taken your readings. That gives you a rested pack in the
+middle of the flat region, which is exactly where a real charge deficit becomes visible and
+nothing else does.
+
+Then compare the suspect cell's gap — computed from the fifteen cell values — day against
+day. If it grows from cycle to cycle, the balancer is winning and the loop below is
+quantitatively confirmed. If it holds steady, then whatever the balancer takes out during
+absorption is being put back on the next charge, and the situation is stable.
+
+**A comparison between different states is worth nothing.** I once compared two readings at
+the same current (1.0 A) and felt quite pleased with myself — until it turned out one was at
+40% SOC and the other at 98%. One flat, one steep. The comparison was meaningless and I'd
+already drawn a conclusion from it.
+
+Current *and* SOC *and* settling time have to match. Otherwise you are comparing two
+different measurements and calling it a trend.
+
 ---
 
 ## The passive balancer is making it worse
@@ -359,8 +498,24 @@ product behaves.
 its pack — while under charging current, minutes earlier, it read as the **highest**. If
 you see that inversion, the balancer has been working against that cell.
 
-On my stack, during absorption at 99% SOC, cell 13 read 3.485 V against a pack average
-around 3.50 V. Lowest in the pack. It had already been bled down.
+Here is the whole thing happening, on one cell, over one charge cycle, on one day:
+
+| Time | State | Cell 13 | Where it ranks in the pack |
+|---|---|---|---|
+| 09:47 | discharging, after the night | 3.265 V | **lowest** (15 mV down) |
+| 10:26 | charging, 8.8 A | 3.329 V | **highest** |
+| 13:41 | charging, 5.8 A | 3.370 V | **highest** |
+| 15:18 | absorption, balancer running | 3.461 V | 11th of 15 — *being bled* |
+| 15:27 | absorption, balancer running | 3.467 V | **lowest** |
+| 15:34 | discharging again | 3.374 V | **lowest** (22 mV down) |
+
+Read the first and last rows together. It went into that charge cycle 15 mV down. It came
+out of it **22 mV** down. The charge was supposed to help it.
+
+And you can watch the mechanism in the middle: it climbs to the top of the pack under
+charging current (`I·R`, not charge), crosses the balancing threshold *first* despite being
+the emptiest cell in the pack, gets bled, and slides down the ranking to last place while the
+balancer is still running.
 
 **Practical consequence:** do not expect the balancer to fix a resistance-degraded cell.
 It will do the opposite. Lowering the charge current limit (via DVCC or equivalent)
@@ -403,9 +558,10 @@ but not enough to make the specific numbers authoritative.
 
 What I'm confident generalises:
 - The three-signature framework (resistance / capacity / diffusion)
-- The current-reversal test
+- The current-reversal test, and the extrapolation to zero current
 - The requirement to test under *sustained* load, not snapshots
-- The validity windows (flat region, high current, balancer off)
+- The requirement to test under *enough* load — under-powered tests give false all-clears
+- The validity windows (flat region, high current, balancer off, actually settled)
 - The passive-balancer trap — this follows from how passive balancing works and is
   confirmed by the absorption-phase inversion, but I have **not** verified it against
   Pylontech's actual firmware. It is mechanistically sound inference, not a datasheet fact.
@@ -441,14 +597,51 @@ Then feed it what you've collected:
 - **Your screenshots** — paste them in as you take them. Claude reads the cell voltage
   tables directly from the image.
 
-The screenshots are the part people skip, and it's the part that matters. Keep sending
-them throughout a test. Tell Claude the current, the SOC and how long the load has been
-running — it needs that context to interpret what it's looking at, and it will otherwise
-guess (badly).
+The screenshots are the part people skip, and it's the part that matters. Keep sending them
+throughout a test.
 
-If you have historical logs from months back, include those too. **The trend over time is
-the strongest evidence you will produce.** A single day of data can show you *that*
-something is off; only the trend shows you that it's getting worse.
+### The thing you need to know about Claude: it has no clock
+
+This is not a quirk. It's a hole, and it will quietly wreck your analysis if you don't work
+around it.
+
+Claude cannot perceive time. It doesn't know when your message arrived, how long you took to
+send the next one, or how much time passed between two screenshots. It has no sense of
+duration at all — and, worse, **no sense that the sense is missing.** A number it guessed
+feels exactly like a number it measured.
+
+So if you tell it *"this was about forty minutes in"*, it will believe you, use the figure,
+and three replies later hand it back to you inside a table as though it were data. It isn't.
+It's your recollection, laundered.
+
+I know this because it happened repeatedly, and every time interval in the early version of
+this work came out of my own head, not out of any measurement.
+
+**The fix is trivial and you should just do it:**
+
+> **1. Put the Windows taskbar clock in every screenshot.**
+> **2. Give Claude the CSV covering the same period.**
+
+Now the timestamp is *in the image* — it's data, not testimony. And once Claude can match
+that timestamp against the log, it can work out for itself how long the current has been
+flowing, how many amp-hours have gone through, how long the pack has been resting. All of it
+derived. None of it guessed.
+
+Don't narrate the timing to Claude. **Show it the clock and give it the log**, and let it do
+the arithmetic.
+
+### And the rest
+
+If you have historical logs from months back, include those too. **The trend over time is the
+strongest evidence you will produce.** A single day of data can show you *that* something is
+off; only the trend shows you it's getting worse.
+
+Two more things worth telling it, because it may not think to check:
+
+- **Compute the spread from the fifteen individual cell values**, not from the BMS's own
+  min/max/imbalance rows. They disagree.
+- **A load test that found nothing may just have been too gentle.** Ask what the current was
+  before accepting a clean result.
 
 ---
 
