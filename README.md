@@ -426,6 +426,23 @@ intra-pack spread, not pack-versus-pack voltage, and the test survives.
 
 (Credit where due: I missed this initially and had to be pulled up on it.)
 
+**Reversible today is not reversible forever.** When the test comes back "reversible
+polarisation, not a capacity deficit," that describes the cell *right now* — it is not a
+permanent all-clear. The underlying problem (rising resistance feeding the balancer loop) is
+still progressing, so a cell that heals completely this month can leave a residual next
+month. Don't file the recovery test as done. Re-run it, and watch one number:
+
+**The dial to track is the zero-current intercept.** Take the current-reversal plot from
+Test 3 — the suspect cell's gap against pack current — and read its value extrapolated to
+0 A. That strips out the resistance term and leaves the cell's real charge state. Log it at
+mid-SOC, settled, every few weeks. As long as that intercept keeps coming back to near zero
+after a full recharge, the capacity is fine and you're watching a slow resistance drift you
+can live with. **The first time it doesn't come back to near zero after a proper recharge is
+the day the damage went from reversible to permanent** — and because you've been logging it,
+you'll see it approaching instead of getting blindsided. That single number is your outlook.
+There's no honest way to forecast remaining life from this kind of data; so don't forecast —
+measure the dial.
+
 ### 6. Is it getting worse? The longitudinal test
 
 Everything above tells you what state the cell is *in*. None of it tells you where it's
@@ -521,6 +538,22 @@ balancer is still running.
 It will do the opposite. Lowering the charge current limit (via DVCC or equivalent)
 reduces the `I·R` distortion and makes the balancer act on something closer to the cell's
 true state — that's a genuine mitigation, though it treats the symptom.
+
+**You can also catch the balancer by its heat — and it's a completely separate confirmation
+from the voltages.** The pack doing the most balancing runs a little warmer than its
+neighbours, but *only* during and after absorption. Two things to get right:
+
+Watch **pack temperature, not the bled cell's temperature.** The balancing resistors sit on
+the BMS board, not on the cell — so the heat shows up in the pack/BMS temperature reading,
+not in the temperature of the cell being drained. (I got this backwards at first and went
+looking for a warm cell. There isn't one. The board is what warms.)
+
+And the reason it's convincing rather than coincidental: **the warmth outlives the current.**
+Once the pack hits 100% and charge current stops, ordinary charge heating is over — but the
+balancer keeps bleeding, and the pack stays warm for a while longer. Heat with no current is
+the giveaway. It also lags by several minutes (things warm slowly), so don't expect the
+temperature bump in the same instant as the voltage event — look across the whole absorption
+window. As always, read it as *warmer than the other packs*, not as an absolute number.
 
 ---
 
